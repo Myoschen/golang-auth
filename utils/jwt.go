@@ -10,12 +10,14 @@ import (
 
 var secret = []byte(os.Getenv("JWT_SECRET"))
 
-func GenerateToken(userID string, exp time.Duration) (string, error) {
-	claims := jwt.MapClaims{}
-	claims["user_id"] = userID
-	claims["iss"] = "golang-auth"
-	claims["exp"] = time.Now().Add(exp).Unix()
-	claims["iat"] = time.Now().Unix()
+func GenerateToken(userID string, tokenType string, duration time.Duration) (string, error) {
+	claims := jwt.MapClaims{
+		"user_id":    userID,
+		"token_type": tokenType,
+		"iss":        "golang-auth",
+		"exp":        time.Now().Add(duration).Unix(),
+		"iat":        time.Now().Unix(),
+	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(secret)
 }
@@ -37,4 +39,12 @@ func VerifyToken(tokenString string) (jwt.MapClaims, error) {
 	}
 
 	return nil, fmt.Errorf("invalid token")
+}
+
+func IsExpiredToken(claims jwt.MapClaims) bool {
+	return float64(time.Now().Unix()) > claims["exp"].(float64)
+}
+
+func IsRefreshToken(claims jwt.MapClaims) bool {
+	return claims["token_type"] == "refresh"
 }

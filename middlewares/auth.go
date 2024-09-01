@@ -5,7 +5,6 @@ import (
 	"golang-auth/utils"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
@@ -35,13 +34,13 @@ func AuthMiddleware(rdb *redis.Client) gin.HandlerFunc {
 			return
 		}
 
-		if float64(time.Now().Unix()) > claims["exp"].(float64) {
+		if utils.IsExpiredToken(claims) {
 			c.JSON(http.StatusUnauthorized, gin.H{"message": "Expired token"})
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}
 
-		if _, err := rdb.Get(context.Background(), "bl_"+tokenString).Result(); err == nil {
+		if val := rdb.Exists(context.Background(), "bl_"+tokenString).Val(); val == 1 {
 			c.JSON(http.StatusUnauthorized, gin.H{"message": "Invalid token"})
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return

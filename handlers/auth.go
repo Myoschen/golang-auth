@@ -24,7 +24,7 @@ func Login(db *pgxpool.Pool) gin.HandlerFunc {
 		var input models.LoginInput
 
 		if err := c.ShouldBindJSON(&input); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+			c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid input data"})
 			return
 		}
 
@@ -40,13 +40,13 @@ func Login(db *pgxpool.Pool) gin.HandlerFunc {
 			return
 		}
 
-		accessToken, err := utils.GenerateToken(user.ID, accessTokenExp)
+		accessToken, err := utils.GenerateToken(user.ID, "access", accessTokenExp)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"message": "An unexpected error occurred"})
 			return
 		}
 
-		refreshToken, err := utils.GenerateToken(user.ID, refreshTokenExp)
+		refreshToken, err := utils.GenerateToken(user.ID, "refresh", refreshTokenExp)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"message": "An unexpected error occurred"})
 			return
@@ -85,7 +85,7 @@ func Register(db *pgxpool.Pool) gin.HandlerFunc {
 		var input models.RegisterInput
 
 		if err := c.ShouldBindJSON(&input); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+			c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid input data"})
 			return
 		}
 
@@ -121,21 +121,52 @@ func Refresh(rdb *redis.Client) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID, exists := c.Get("userID")
 		if !exists {
-			c.JSON(http.StatusBadRequest, gin.H{"message": "Not logged in yet"})
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "An unexpected error occurred"})
 			return
 		}
 
-		accessToken, err := utils.GenerateToken(userID.(string), accessTokenExp)
+		var input models.RefreshInput
+
+		if err := c.ShouldBindJSON(&input); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid input data"})
+			return
+		}
+
+		if val := rdb.Exists(context.Background(), "bl_"+input.RefreshToken).Val(); val == 1 {
+			c.JSON(http.StatusUnauthorized, gin.H{"message": "Invalid refresh token"})
+			return
+		}
+
+		claims, err := utils.VerifyToken(input.RefreshToken)
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"message": "Invalid refresh token"})
+			return
+		}
+
+		if !utils.IsRefreshToken(claims) {
+			c.JSON(http.StatusUnauthorized, gin.H{"message": "Invalid refresh token"})
+			return
+		}
+
+		if utils.IsExpiredToken(claims) {
+			c.JSON(http.StatusUnauthorized, gin.H{"message": "Expired token"})
+			return
+		}
+
+		accessToken, err := utils.GenerateToken(userID.(string), "access", accessTokenExp)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"message": "An unexpected error occurred"})
 			return
 		}
 
-		refreshToken, err := utils.GenerateToken(userID.(string), refreshTokenExp)
+		refreshToken, err := utils.GenerateToken(userID.(string), "refresh", refreshTokenExp)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"message": "An unexpected error occurred"})
 			return
 		}
+
+		ttl := time.Duration(int64(claims["exp"].(float64))-time.Now().Unix()) * time.Second
+		rdb.Set(context.Background(), "bl_"+input.RefreshToken, "true", ttl)
 
 		c.JSON(http.StatusOK, gin.H{
 			"access_token":  accessToken,
