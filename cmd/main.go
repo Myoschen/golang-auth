@@ -25,10 +25,10 @@ func main() {
 	r.Use(cors.New(corsConfig))
 
 	authRoutes := r.Group("/auth")
-	authRoutes.POST("/login", handlers.Login(db, rdb))
+	authRoutes.POST("/login", handlers.Login(db))
 	authRoutes.POST("/register", handlers.Register(db))
-	authRoutes.POST("/logout", middlewares.AuthMiddleware(), handlers.Logout(rdb))
-	authRoutes.POST("/refresh", middlewares.AuthMiddleware(), handlers.Refresh(rdb))
+	authRoutes.POST("/logout", middlewares.AuthMiddleware(rdb), handlers.Logout(rdb))
+	authRoutes.POST("/refresh", middlewares.AuthMiddleware(rdb), handlers.Refresh(rdb))
 
 	r.Run(":4000")
 

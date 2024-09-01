@@ -19,7 +19,7 @@ const (
 	refreshTokenExp = time.Hour * 24 * 7
 )
 
-func Login(db *pgxpool.Pool, rdb *redis.Client) gin.HandlerFunc {
+func Login(db *pgxpool.Pool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var input models.LoginInput
 
@@ -42,18 +42,15 @@ func Login(db *pgxpool.Pool, rdb *redis.Client) gin.HandlerFunc {
 
 		accessToken, err := utils.GenerateToken(user.ID, accessTokenExp)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "An unexpected error occurred"})
 			return
 		}
 
 		refreshToken, err := utils.GenerateToken(user.ID, refreshTokenExp)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "An unexpected error occurred"})
 			return
 		}
-
-		rdb.Set(context.Background(), user.ID, accessToken, accessTokenExp)
-		rdb.Set(context.Background(), "refresh_"+user.ID, refreshToken, refreshTokenExp)
 
 		c.JSON(http.StatusOK, gin.H{
 			"access_token":  accessToken,
@@ -64,19 +61,20 @@ func Login(db *pgxpool.Pool, rdb *redis.Client) gin.HandlerFunc {
 
 func Logout(rdb *redis.Client) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		anyUserID, exists := c.Get("userID")
+		token, exists := c.Get("token")
 		if !exists {
-			c.JSON(http.StatusBadRequest, gin.H{"message": "Not logged in yet"})
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "An unexpected error occurred"})
 			return
 		}
 
-		userID, ok := anyUserID.(string)
-		if !ok {
-			c.JSON(http.StatusInternalServerError, gin.H{"message": "Something wrong"})
+		tokenExp, exists := c.Get("tokenExp")
+		if !exists {
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "An unexpected error occurred"})
 			return
 		}
 
-		rdb.Del(context.Background(), userID, "refresh_"+userID)
+		ttl := time.Duration(int64(tokenExp.(float64))-time.Now().Unix()) * time.Second
+		rdb.Set(context.Background(), "bl_"+token.(string), "true", ttl)
 
 		c.JSON(http.StatusOK, gin.H{"message": "Logout successfully"})
 	}
@@ -100,7 +98,7 @@ func Register(db *pgxpool.Pool) gin.HandlerFunc {
 
 		hash, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "An unexpected error occurred"})
 			return
 		}
 
@@ -108,7 +106,7 @@ func Register(db *pgxpool.Pool) gin.HandlerFunc {
 		var user models.User
 		row = db.QueryRow(context.Background(), "insert into users (username, email, password) values ($1, $2, $3) returning *", input.Username, input.Email, string(hash))
 		if err := row.Scan(&user.ID, &user.Username, &user.Email, &user.Password, &user.CreatedAt, &user.UpdatedAt); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "An unexpected error occurred"})
 			return
 		}
 
@@ -121,32 +119,23 @@ func Register(db *pgxpool.Pool) gin.HandlerFunc {
 
 func Refresh(rdb *redis.Client) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		anyUserID, exists := c.Get("userID")
+		userID, exists := c.Get("userID")
 		if !exists {
 			c.JSON(http.StatusBadRequest, gin.H{"message": "Not logged in yet"})
 			return
 		}
 
-		userID, ok := anyUserID.(string)
-		if !ok {
-			c.JSON(http.StatusInternalServerError, gin.H{"message": "Something wrong"})
-			return
-		}
-
-		accessToken, err := utils.GenerateToken(userID, accessTokenExp)
+		accessToken, err := utils.GenerateToken(userID.(string), accessTokenExp)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "An unexpected error occurred"})
 			return
 		}
 
-		refreshToken, err := utils.GenerateToken(userID, refreshTokenExp)
+		refreshToken, err := utils.GenerateToken(userID.(string), refreshTokenExp)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "An unexpected error occurred"})
 			return
 		}
-
-		rdb.Set(context.Background(), userID, accessToken, accessTokenExp)
-		rdb.Set(context.Background(), "refresh_"+userID, refreshToken, refreshTokenExp)
 
 		c.JSON(http.StatusOK, gin.H{
 			"access_token":  accessToken,

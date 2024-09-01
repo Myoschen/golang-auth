@@ -1,15 +1,17 @@
 package middlewares
 
 import (
+	"context"
 	"golang-auth/utils"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 )
 
-func AuthMiddleware() gin.HandlerFunc {
+func AuthMiddleware(rdb *redis.Client) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		tokenString := c.GetHeader("Authorization")
 		if tokenString == "" {
@@ -39,7 +41,15 @@ func AuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
+		if _, err := rdb.Get(context.Background(), "bl_"+tokenString).Result(); err == nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"message": "Invalid token"})
+			c.AbortWithStatus(http.StatusUnauthorized)
+			return
+		}
+
 		c.Set("userID", claims["user_id"])
+		c.Set("token", tokenString)
+		c.Set("tokenExp", claims["exp"])
 		c.Next()
 	}
 }
