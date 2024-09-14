@@ -29,19 +29,19 @@ func AuthMiddleware(rdb *redis.Client) gin.HandlerFunc {
 		tokenString = tokenParts[1]
 		claims, err := utils.VerifyToken(tokenString)
 		if err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"message": "Invalid or expired token"})
-			c.AbortWithStatus(http.StatusUnauthorized)
-			return
-		}
-
-		if utils.IsExpiredToken(claims) {
-			c.JSON(http.StatusUnauthorized, gin.H{"message": "Expired token"})
+			c.JSON(http.StatusUnauthorized, gin.H{"message": "Invalid token"})
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}
 
 		if val := rdb.Exists(context.Background(), "bl_"+tokenString).Val(); val == 1 {
 			c.JSON(http.StatusUnauthorized, gin.H{"message": "Invalid token"})
+			c.AbortWithStatus(http.StatusUnauthorized)
+			return
+		}
+
+		if utils.IsExpiredToken(claims) {
+			c.JSON(http.StatusUnauthorized, gin.H{"message": "Expired token"})
 			c.AbortWithStatus(http.StatusUnauthorized)
 			return
 		}
